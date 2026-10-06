@@ -86,6 +86,29 @@ textarea::placeholder{color:var(--muted)}
 .send:disabled{opacity:.4;cursor:default}
 .send svg{width:20px;height:20px}
 
+
+.actions{display:flex;gap:8px}
+.ghost[aria-pressed="true"]{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+.mic{width:48px;height:48px;flex:none;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--text);cursor:pointer;display:grid;place-items:center}
+.mic[hidden]{display:none}
+.mic svg{width:20px;height:20px}
+.mic.on{background:#ff5d73;border-color:#ff5d73;color:#fff;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(255,93,115,.2)}}
+.send{background:linear-gradient(135deg,#8f8bff,#5fd0ff)}
+.brand span{background:linear-gradient(135deg,#8f8bff,#5fd0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bubble code{background:#0b0d12;padding:1px 6px;border-radius:6px;font-size:.92em}
+.srcs{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:.8rem;display:flex;flex-direction:column;gap:4px}
+.srcs a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.bubble{min-width:0}
+.code{position:relative;margin:10px 0;background:#0b0d12;border:1px solid var(--line);border-radius:12px;max-width:100%}
+.code pre{margin:0;padding:38px 14px 12px;overflow-x:auto;white-space:pre;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;-webkit-overflow-scrolling:touch}
+.bar{position:absolute;top:6px;right:6px;display:flex;gap:6px}
+.tb{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:.78rem;padding:6px 10px;cursor:pointer;min-height:32px}
+.run{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.pv{position:fixed;inset:0;z-index:10;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.pv[hidden]{display:none}
+.pvbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-weight:600}
+.pv iframe{flex:1;border:0;background:#fff;width:100%}
 @media (min-width:700px){
   header{padding:18px 28px}
   main{padding:28px}
@@ -99,7 +122,7 @@ textarea::placeholder{color:var(--muted)}
 <div class="app">
   <header>
     <div class="brand">Amara<span>L</span> IA</div>
-    <button class="ghost" id="novo" type="button">Nova conversa</button>
+    <div class="actions"><button class="ghost" id="voz" type="button" aria-pressed="false">Voz</button><button class="ghost" id="novo" type="button">Nova conversa</button></div>
   </header>
 
   <main id="chat" aria-live="polite">
@@ -117,10 +140,18 @@ textarea::placeholder{color:var(--muted)}
 
   <div class="composer">
     <textarea id="input" rows="1" placeholder="Escreva sua mensagem" aria-label="Mensagem" enterkeyhint="send"></textarea>
+    <button class="mic" id="mic" type="button" aria-label="Falar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
     <button class="send" id="send" type="button" aria-label="Enviar" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </button>
   </div>
+</div>
+
+<div class="pv" id="pv" hidden>
+  <div class="pvbar"><span>Teste da página</span><button class="ghost" id="pvx" type="button">Fechar</button></div>
+  <iframe id="pvf" sandbox="allow-scripts allow-forms allow-modals" title="Teste da página"></iframe>
 </div>
 
 <script>
@@ -139,13 +170,64 @@ let empty = document.getElementById("empty");
 let history = [];
 let busy = false;
 
-function add(role, text, extra){
+function inline(t){
+  let s = t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  s = s.replace(/^\s*[*-] /gm,"• ");
+  s = s.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  return s.replace(/\*(?!\s)([^*\n]+?)\*/g,"<i>$1</i>");
+}
+
+const esc = x => x.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+function md(t){
+  return t.split("```").map((p,i) => {
+    if(i % 2 === 0) return inline(p);
+    const lang = (p.match(/^([^\n]*)\n/) || ["",""])[1].trim().toLowerCase();
+    const code = p.replace(/^[^\n]*\n/, "").replace(/\n$/, "");
+    const run = lang === "html" ? '<button class="tb run" type="button">Testar</button>' : "";
+    return '<div class="code" data-lang="' + esc(lang) + '"><div class="bar">' + run + '<button class="tb dl" type="button">Baixar</button><button class="tb copy" type="button">Copiar</button></div><pre><code>' + esc(code) + '</code></pre></div>';
+  }).join("");
+}
+
+const NAMES = {html:"index.html", css:"style.css", js:"script.js", javascript:"script.js", python:"main.py", py:"main.py", json:"dados.json"};
+const pv = document.getElementById("pv"), pvf = document.getElementById("pvf");
+chat.addEventListener("click", e => {
+  const b = e.target.closest(".tb");
+  if(!b) return;
+  const box = b.closest(".code");
+  const txt = box.querySelector("code").textContent;
+  if(b.classList.contains("copy")){
+    navigator.clipboard.writeText(txt)
+      .then(() => { b.textContent = "Copiado"; setTimeout(() => b.textContent = "Copiar", 1800); })
+      .catch(() => { b.textContent = "Falhou"; });
+  } else if(b.classList.contains("dl")){
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([txt], {type:"text/plain;charset=utf-8"}));
+    a.download = NAMES[box.dataset.lang] || "arquivo.txt";
+    document.body.appendChild(a); a.click(); a.remove();
+  } else if(b.classList.contains("run")){
+    pvf.srcdoc = txt; pv.hidden = false;
+  }
+});
+document.getElementById("pvx").addEventListener("click", () => { pv.hidden = true; pvf.srcdoc = ""; });
+
+function add(role, text, extra, sources){
   if(empty){ empty.remove(); empty = null; }
   const row = document.createElement("div");
   row.className = "msg " + role + (extra ? " " + extra : "");
   const b = document.createElement("div");
   b.className = "bubble";
-  b.textContent = text;
+  if(role === "bot" && text){ b.innerHTML = md(text); } else { b.textContent = text; }
+  if(sources && sources.length){
+    const d = document.createElement("div"); d.className = "srcs";
+    sources.slice(0,4).forEach(x => {
+      if(!/^https:\/\//.test(x.url)) return;
+      const a = document.createElement("a");
+      a.href = x.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.textContent = x.title || x.url; d.appendChild(a);
+    });
+    b.appendChild(d);
+  }
   row.appendChild(b);
   chat.appendChild(row);
   chat.scrollTop = chat.scrollHeight;
@@ -161,7 +243,7 @@ function typing(){
 async function getReply(){
   if(!API_URL){
     await new Promise(r => setTimeout(r, 700));
-    return "Modo demonstração: a interface está funcionando! Conecte um endpoint em API_URL para eu responder de verdade.";
+    return {reply:"Modo demonstração: a interface está funcionando!"};
   }
   const res = await fetch(API_URL, {
     method:"POST",
@@ -171,7 +253,7 @@ async function getReply(){
   let data = {};
   try{ data = await res.json(); }catch(_){}
   if(!res.ok) throw new Error(data.reply || "Falha na resposta do servidor.");
-  return data.reply || "Não recebi resposta. Tente de novo.";
+  return {reply: data.reply || "Não recebi resposta. Tente de novo.", sources: data.sources || []};
 }
 
 async function send(text){
@@ -183,9 +265,11 @@ async function send(text){
   history.push({role:"user", content:text});
   const t = typing();
   try{
-    const reply = await getReply();
+    const r = await getReply();
+    const reply = r.reply;
     t.remove();
-    add("bot", reply);
+    add("bot", reply, "", r.sources);
+    speak(reply);
     history.push({role:"assistant", content:reply});
   }catch(e){
     t.remove();
@@ -210,6 +294,40 @@ input.addEventListener("keydown", e => {
 });
 sendBtn.addEventListener("click", () => send(input.value));
 document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => send(c.textContent)));
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = document.getElementById("mic");
+const vozBtn = document.getElementById("voz");
+let rec = null, listening = false, vozOn = false, speakNext = false;
+try{ vozOn = localStorage.getItem("voz") === "1"; }catch(_){}
+vozBtn.setAttribute("aria-pressed", String(vozOn));
+vozBtn.addEventListener("click", () => {
+  vozOn = !vozOn;
+  vozBtn.setAttribute("aria-pressed", String(vozOn));
+  try{ localStorage.setItem("voz", vozOn ? "1" : "0"); }catch(_){}
+  if(!vozOn && "speechSynthesis" in window) speechSynthesis.cancel();
+});
+function speak(text){
+  const want = vozOn || speakNext; speakNext = false;
+  if(!want || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g," código na tela. ").replace(/[*`#]/g,"").replace(/https?:\/\/\S+/g,""));
+  u.lang = "pt-BR"; speechSynthesis.speak(u);
+}
+if(!SR){ micBtn.hidden = true; } else {
+  rec = new SR(); rec.lang = "pt-BR"; rec.interimResults = true; rec.continuous = false;
+  rec.onresult = e => { input.value = Array.from(e.results).map(r => r[0].transcript).join(""); resize(); };
+  rec.onend = () => {
+    listening = false; micBtn.classList.remove("on");
+    if(input.value.trim()){ speakNext = true; send(input.value); }
+  };
+  rec.onerror = () => { listening = false; micBtn.classList.remove("on"); };
+  micBtn.addEventListener("click", () => {
+    if(listening){ rec.stop(); return; }
+    if("speechSynthesis" in window) speechSynthesis.cancel();
+    input.value = ""; resize();
+    try{ rec.start(); listening = true; micBtn.classList.add("on"); }catch(_){}
+  });
+}
 document.getElementById("novo").addEventListener("click", () => location.reload());
 </script>
 </body>
