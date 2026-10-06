@@ -58,8 +58,11 @@ exports.handler = async (event) => {
       return json(429, { reply: "Muitas mensagens em pouco tempo. Aguarde um instante e tente de novo." });
     }
     if (!res.ok) {
-      console.error("Erro da API:", res.status, await res.text());
-      return json(502, { reply: "A IA não conseguiu responder agora. Tente de novo." });
+      const raw = await res.text();
+      console.error("Erro da API:", res.status, raw);
+      let msg = "";
+      try { msg = JSON.parse(raw).error.message; } catch (_) {}
+      return json(502, { reply: `A IA não respondeu (erro ${res.status}): ${String(msg).slice(0, 200)}` });
     }
 
     const data = await res.json();
