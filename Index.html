@@ -168,8 +168,9 @@ async function getReply(){
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({messages:history})
   });
-  if(!res.ok) throw new Error("Falha na resposta do servidor.");
-  const data = await res.json();
+  let data = {};
+  try{ data = await res.json(); }catch(_){}
+  if(!res.ok) throw new Error(data.reply || "Falha na resposta do servidor.");
   return data.reply || "Não recebi resposta. Tente de novo.";
 }
 
@@ -188,7 +189,8 @@ async function send(text){
     history.push({role:"assistant", content:reply});
   }catch(e){
     t.remove();
-    add("bot","Não consegui responder agora. Verifique sua conexão e tente novamente.","err");
+    const generic = "Não consegui responder agora. Verifique sua conexão e tente novamente.";
+    add("bot", (e instanceof TypeError || !e.message) ? generic : e.message, "err");
   }
   busy = false; sendBtn.disabled = !input.value.trim();
 }
