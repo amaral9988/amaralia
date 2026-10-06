@@ -248,7 +248,7 @@ async function getReply(){
   const res = await fetch(API_URL, {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({messages:history})
+    body:JSON.stringify({messages:history, voice: vozOn || speakNext})
   });
   let data = {};
   try{ data = await res.json(); }catch(_){}
@@ -260,6 +260,7 @@ async function send(text){
   text = text.trim();
   if(!text || busy) return;
   busy = true; sendBtn.disabled = true;
+  if("speechSynthesis" in window) speechSynthesis.cancel();
   input.value = ""; resize();
   add("user", text);
   history.push({role:"user", content:text});
@@ -306,12 +307,57 @@ vozBtn.addEventListener("click", () => {
   try{ localStorage.setItem("voz", vozOn ? "1" : "0"); }catch(_){}
   if(!vozOn && "speechSynthesis" in window) speechSynthesis.cancel();
 });
+let ptVoice = null;
+function pickVoice(){
+  if(!("speechSynthesis" in window)) return;
+  const all = speechSynthesis.getVoices();
+  const pt = all.filter(v => /^pt[-_]BR/i.test(v.lang));
+  const list = pt.length ? pt : all.filter(v => /^pt/i.test(v.lang));
+  const score = v => (/natural|neural|online|premium|enhanced|wavenet/i.test(v.name) ? 4 : 0) + (/google/i.test(v.name) ? 2 : 0) + (v.localService ? 0 : 1);
+  ptVoice = list.sort((a,b) => score(b) - score(a))[0] || null;
+}
+if("speechSynthesis" in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+
+function paraFala(t){
+  return t
+    .replace(/```[\s\S]*?```/g, " O código está na tela. ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/R\$\s?([\d.,]+)/g, "$1 reais")
+    .replace(/(\d)\s?%/g, "$1 por cento")
+    .replace(/^\s*[•*-]\s+/gm, "")
+    .replace(/[*_`#>]/g, "")
+    .replace(/\n+/g, ". ")
+    .replace(/([.!?…])\s*\./g, "$1")
+    .replace(/\s+/g, " ").trim();
+}
+
+function pedacos(t){
+  const out = [];
+  t.split(/(?<=[.!?…])\s+/).forEach(s => {
+    s = s.trim();
+    while(s.length > 220){
+      let i = s.lastIndexOf(",", 220);
+      if(i < 60) i = s.lastIndexOf(" ", 220);
+      if(i < 1) i = 220;
+      out.push(s.slice(0, i + 1).trim());
+      s = s.slice(i + 1).trim();
+    }
+    if(s) out.push(s);
+  });
+  return out;
+}
+
 function speak(text){
   const want = vozOn || speakNext; speakNext = false;
   if(!want || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g," código na tela. ").replace(/[*`#]/g,"").replace(/https?:\/\/\S+/g,""));
-  u.lang = "pt-BR"; speechSynthesis.speak(u);
+  pedacos(paraFala(text)).forEach(frase => {
+    const u = new SpeechSynthesisUtterance(frase);
+    u.lang = "pt-BR"; if(ptVoice) u.voice = ptVoice;
+    u.rate = 1.04; u.pitch = 1;
+    speechSynthesis.speak(u);
+  });
 }
 if(!SR){ micBtn.hidden = true; } else {
   rec = new SR(); rec.lang = "pt-BR"; rec.interimResults = true; rec.continuous = false;
